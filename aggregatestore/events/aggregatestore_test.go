@@ -154,7 +154,7 @@ func TestAggregateStore_SaveEvents(t *testing.T) {
 		t.Error("there should be no error:", err)
 	}
 
-	events, err := eventStore.Load(ctx, id)
+	events, err := eventStore.Load(ctx, agg.AggregateType(), id)
 	if err != nil {
 		t.Error("there should be no error:", err)
 	}

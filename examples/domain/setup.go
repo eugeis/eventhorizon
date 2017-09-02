@@ -39,7 +39,7 @@ func Setup(
 	// Create the aggregate repository.
 	aggregateStore, err := events.NewAggregateStore(eventStore, eventBus)
 	if err != nil {
-		log.Fatalf("could not create aggregate store: %s", err)
+		log.Fatalf("couleventStored not create aggregate store: %s", err)
 	}
 
 	// Create the aggregate command handler.

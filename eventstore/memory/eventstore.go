@@ -30,14 +30,14 @@ var ErrCouldNotSaveAggregate = errors.New("could not save aggregate")
 // EventStore implements EventStore as an in memory structure.
 type EventStore struct {
 	// The outer map is with namespace as key, the inner with aggregate ID.
-	db   map[string]map[eh.UUID]aggregateRecord
+	db   map[string]map[string]aggregateRecord
 	dbMu sync.RWMutex
 }
 
 // NewEventStore creates a new EventStore using memory as storage.
 func NewEventStore() *EventStore {
 	s := &EventStore{
-		db: map[string]map[eh.UUID]aggregateRecord{},
+		db: map[string]map[string]aggregateRecord{},
 	}
 	return s
 }
@@ -55,6 +55,7 @@ func (s *EventStore) Save(ctx context.Context, events []eh.Event, originalVersio
 	// original aggregate version.
 	dbEvents := make([]dbEvent, len(events))
 	aggregateID := events[0].AggregateID()
+	aggregateType := events[0].AggregateType()
 	version := originalVersion
 	for i, event := range events {
 		// Only accept events belonging to the same aggregate.
@@ -84,6 +85,7 @@ func (s *EventStore) Save(ctx context.Context, events []eh.Event, originalVersio
 	defer s.dbMu.Unlock()
 
 	// Either insert a new aggregate or append to an existing.
+	fullId := FullId(aggregateType, aggregateID)
 	if originalVersion == 0 {
 		aggregate := aggregateRecord{
 			AggregateID: aggregateID,
@@ -91,12 +93,12 @@ func (s *EventStore) Save(ctx context.Context, events []eh.Event, originalVersio
 			Events:      dbEvents,
 		}
 
-		s.db[ns][aggregateID] = aggregate
+		s.db[ns][fullId] = aggregate
 	} else {
 		// Increment aggregate version on insert of new event record, and
 		// only insert if version of aggregate is matching (ie not changed
 		// since loading the aggregate).
-		if aggregate, ok := s.db[ns][aggregateID]; ok {
+		if aggregate, ok := s.db[ns][fullId]; ok {
 			if aggregate.Version != originalVersion {
 				return eh.EventStoreError{
 					Err:       ErrCouldNotSaveAggregate,
@@ -107,7 +109,7 @@ func (s *EventStore) Save(ctx context.Context, events []eh.Event, originalVersio
 			aggregate.Version += len(dbEvents)
 			aggregate.Events = append(aggregate.Events, dbEvents...)
 
-			s.db[ns][aggregateID] = aggregate
+			s.db[ns][fullId] = aggregate
 		}
 	}
 
@@ -115,7 +117,7 @@ func (s *EventStore) Save(ctx context.Context, events []eh.Event, originalVersio
 }
 
 // Load implements the Load method of the eventhorizon.EventStore interface.
-func (s *EventStore) Load(ctx context.Context, id eh.UUID) ([]eh.Event, error) {
+func (s *EventStore) Load(ctx context.Context, aggregateType eh.AggregateType, id eh.UUID) ([]eh.Event, error) {
 	s.dbMu.RLock()
 	defer s.dbMu.RUnlock()
 
@@ -124,7 +126,7 @@ func (s *EventStore) Load(ctx context.Context, id eh.UUID) ([]eh.Event, error) {
 	ns := s.namespace(ctx)
 	s.dbMu.RLock()
 
-	aggregate, ok := s.db[ns][id]
+	aggregate, ok := s.db[ns][FullId(aggregateType, id)]
 	if !ok {
 		return []eh.Event{}, nil
 	}
@@ -143,7 +145,7 @@ func (s *EventStore) Replace(ctx context.Context, event eh.Event) error {
 	ns := s.namespace(ctx)
 
 	s.dbMu.RLock()
-	aggregate, ok := s.db[ns][event.AggregateID()]
+	aggregate, ok := s.db[ns][FullId(event.AggregateType(), event.AggregateID())]
 	if !ok {
 		s.dbMu.RUnlock()
 		return eh.ErrAggregateNotFound
@@ -178,7 +180,7 @@ func (s *EventStore) RenameEvent(ctx context.Context, from, to eh.EventType) err
 	s.dbMu.Lock()
 	defer s.dbMu.Unlock()
 
-	updated := map[eh.UUID]aggregateRecord{}
+	updated := map[string]aggregateRecord{}
 	for id, aggregate := range s.db[ns] {
 		events := make([]dbEvent, len(aggregate.Events))
 		for i, e := range aggregate.Events {
@@ -205,7 +207,7 @@ func (s *EventStore) namespace(ctx context.Context) string {
 	defer s.dbMu.Unlock()
 	ns := eh.NamespaceFromContext(ctx)
 	if _, ok := s.db[ns]; !ok {
-		s.db[ns] = map[eh.UUID]aggregateRecord{}
+		s.db[ns] = map[string]aggregateRecord{}
 	}
 	return ns
 }
@@ -278,4 +280,8 @@ func (e event) Version() int {
 // String implements the String method of the eventhorizon.Event interface.
 func (e event) String() string {
 	return fmt.Sprintf("%s@%d", e.dbEvent.EventType, e.dbEvent.Version)
+}
+
+func FullId(aggregateType eh.AggregateType, aggregateId eh.UUID) string {
+	return fmt.Sprintf("%v.%v", aggregateType, aggregateId)
 }
