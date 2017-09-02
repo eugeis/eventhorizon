@@ -127,12 +127,12 @@ func (s *EventStore) Save(ctx context.Context, events []eh.Event, originalVersio
 	// Either insert a new aggregate or append to an existing.
 	if originalVersion == 0 {
 		aggregate := aggregateRecord{
-			AggregateID: FullId(aggregateType, aggregateID),
+			AggregateID: aggregateID.String(),
 			Version:     len(dbEvents),
 			Events:      dbEvents,
 		}
 
-		if err := sess.DB(s.dbName(ctx)).C("events").Insert(aggregate); err != nil {
+		if err := eventsCollection(ctx, s, sess, aggregateType).Insert(aggregate); err != nil {
 			return eh.EventStoreError{
 				BaseErr:   err,
 				Err:       ErrCouldNotSaveAggregate,
@@ -143,9 +143,9 @@ func (s *EventStore) Save(ctx context.Context, events []eh.Event, originalVersio
 		// Increment aggregate version on insert of new event record, and
 		// only insert if version of aggregate is matching (ie not changed
 		// since loading the aggregate).
-		if err := sess.DB(s.dbName(ctx)).C("events").Update(
+		if err := eventsCollection(ctx, s, sess, aggregateType).Update(
 			bson.M{
-				"_id":     FullId(aggregateType, aggregateID),
+				"_id":     aggregateID.String(),
 				"version": originalVersion,
 			},
 			bson.M{
@@ -170,7 +170,8 @@ func (s *EventStore) Load(ctx context.Context, aggregateType eh.AggregateType, i
 	defer sess.Close()
 
 	var aggregate aggregateRecord
-	err := sess.DB(s.dbName(ctx)).C("events").FindId(FullId(aggregateType, id)).One(&aggregate)
+	coll := eventsCollection(ctx, s, sess, aggregateType)
+	err := coll.FindId(id).One(&aggregate)
 	if err == mgo.ErrNotFound {
 		return []eh.Event{}, nil
 	} else if err != nil {
@@ -214,7 +215,8 @@ func (s *EventStore) Replace(ctx context.Context, event eh.Event) error {
 
 	// First check if the aggregate exists, the not found error in the update
 	// query can mean both that the aggregate or the event is not found.
-	n, err := sess.DB(s.dbName(ctx)).C("events").FindId(event.AggregateID().String()).Count()
+	coll := eventsCollection(ctx, s, sess, event.AggregateType())
+	n, err := coll.FindId(event.AggregateID().String()).Count()
 	if n == 0 {
 		return eh.ErrAggregateNotFound
 	} else if err != nil {
@@ -232,9 +234,9 @@ func (s *EventStore) Replace(ctx context.Context, event eh.Event) error {
 	}
 
 	// Find and replace the event.
-	err = sess.DB(s.dbName(ctx)).C("events").Update(
+	err = coll.Update(
 		bson.M{
-			"_id":            fmt.Sprintf("%v.%v", event.AggregateType(), event.AggregateID()),
+			"_id":            event.AggregateID().String(),
 			"events.version": event.Version(),
 		},
 		bson.M{
@@ -252,6 +254,9 @@ func (s *EventStore) Replace(ctx context.Context, event eh.Event) error {
 	}
 
 	return nil
+}
+func eventsCollection(ctx context.Context, s *EventStore, sess *mgo.Session, aggregateType eh.AggregateType) *mgo.Collection {
+	return sess.DB(s.dbName(ctx)).C(fmt.Sprintf("%v_events", aggregateType))
 }
 
 // RenameEvent implements the RenameEvent method of the eventhorizon.EventStore interface.
@@ -389,8 +394,4 @@ func (e event) Timestamp() time.Time {
 // String implements the String method of the eventhorizon.Event interface.
 func (e event) String() string {
 	return fmt.Sprintf("%s@%d", e.dbEvent.EventType, e.dbEvent.Version)
-}
-
-func FullId(aggregateType eh.AggregateType, aggregateId eh.UUID) string {
-	return fmt.Sprintf("%v.%v", aggregateType, aggregateId)
 }
