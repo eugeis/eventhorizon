@@ -16,7 +16,6 @@ package eventhorizon
 
 import (
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"regexp"
 )
@@ -62,11 +61,12 @@ func NewUUID() UUID {
 //     ParseUUID("urn:uuid:6ba7b814-9dad-11d1-80b4-00c04fd430c8")
 //
 func ParseUUID(s string) (UUID, error) {
-	md := re.FindStringSubmatch(s)
-	if md == nil {
-		return "", errors.New("Invalid UUID string")
-	}
-	return UUID(fmt.Sprintf("%s-%s-%s-%s-%s", md[2], md[3], md[4], md[5], md[6])), nil
+	//md := re.FindStringSubmatch(s)
+	//if md == nil {
+	//	return "", errors.New("Invalid UUID string")
+	//}
+	//return UUID(fmt.Sprintf("%s-%s-%s-%s-%s", md[2], md[3], md[4], md[5], md[6])), nil
+	return UUID(s), nil
 }
 
 // String implements the Stringer interface for UUID.
