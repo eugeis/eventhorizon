@@ -27,7 +27,7 @@ func TestCreateAggregate(t *testing.T) {
 	}
 
 	RegisterAggregate(func(id UUID) Aggregate {
-		return &TestAggregateRegister{AggregateBase: NewAggregateBase(TestAggregateType, id)}
+		return &TestAggregateRegister{id: id}
 	})
 
 	aggregate, err = CreateAggregate(TestAggregateRegisterType, id)
@@ -38,8 +38,8 @@ func TestCreateAggregate(t *testing.T) {
 	if aggregate.AggregateType() != TestAggregateRegisterType {
 		t.Error("the aggregate type should be correct:", aggregate.AggregateType())
 	}
-	if aggregate.AggregateID() != id {
-		t.Error("the ID should be correct:", aggregate.AggregateID())
+	if aggregate.EntityID() != id {
+		t.Error("the ID should be correct:", aggregate.EntityID())
 	}
 }
 
@@ -50,9 +50,7 @@ func TestRegisterAggregateEmptyName(t *testing.T) {
 		}
 	}()
 	RegisterAggregate(func(id UUID) Aggregate {
-		return &TestAggregateRegisterEmpty{
-			AggregateBase: NewAggregateBase(TestAggregateRegisterType, id),
-		}
+		return &TestAggregateRegisterEmpty{id: id}
 	})
 }
 
@@ -72,10 +70,10 @@ func TestRegisterAggregateTwice(t *testing.T) {
 		}
 	}()
 	RegisterAggregate(func(id UUID) Aggregate {
-		return &TestAggregateRegisterTwice{AggregateBase: NewAggregateBase(TestAggregateType, id)}
+		return &TestAggregateRegisterTwice{id: id}
 	})
 	RegisterAggregate(func(id UUID) Aggregate {
-		return &TestAggregateRegisterTwice{AggregateBase: NewAggregateBase(TestAggregateType, id)}
+		return &TestAggregateRegisterTwice{id: id}
 	})
 }
 
@@ -85,9 +83,13 @@ const (
 	TestAggregateRegisterTwiceType AggregateType = "TestAggregateRegisterTwice"
 )
 
-type TestAggregateRegister struct{ *AggregateBase }
+type TestAggregateRegister struct {
+	id UUID
+}
 
 var _ = Aggregate(&TestAggregateRegister{})
+
+func (a *TestAggregateRegister) EntityID() UUID { return a.id }
 
 func (a *TestAggregateRegister) AggregateType() AggregateType {
 	return TestAggregateRegisterType
@@ -95,13 +97,14 @@ func (a *TestAggregateRegister) AggregateType() AggregateType {
 func (a *TestAggregateRegister) HandleCommand(ctx context.Context, cmd Command) error {
 	return nil
 }
-func (a *TestAggregateRegister) ApplyEvent(ctx context.Context, event Event) error {
-	return nil
+
+type TestAggregateRegisterEmpty struct {
+	id UUID
 }
 
-type TestAggregateRegisterEmpty struct{ *AggregateBase }
-
 var _ = Aggregate(&TestAggregateRegisterEmpty{})
+
+func (a *TestAggregateRegisterEmpty) EntityID() UUID { return a.id }
 
 func (a *TestAggregateRegisterEmpty) AggregateType() AggregateType {
 	return TestAggregateRegisterEmptyType
@@ -109,20 +112,18 @@ func (a *TestAggregateRegisterEmpty) AggregateType() AggregateType {
 func (a *TestAggregateRegisterEmpty) HandleCommand(ctx context.Context, cmd Command) error {
 	return nil
 }
-func (a *TestAggregateRegisterEmpty) ApplyEvent(ctx context.Context, event Event) error {
-	return nil
+
+type TestAggregateRegisterTwice struct {
+	id UUID
 }
 
-type TestAggregateRegisterTwice struct{ *AggregateBase }
-
 var _ = Aggregate(&TestAggregateRegisterTwice{})
+
+func (a *TestAggregateRegisterTwice) EntityID() UUID { return a.id }
 
 func (a *TestAggregateRegisterTwice) AggregateType() AggregateType {
 	return TestAggregateRegisterTwiceType
 }
 func (a *TestAggregateRegisterTwice) HandleCommand(ctx context.Context, cmd Command) error {
-	return nil
-}
-func (a *TestAggregateRegisterTwice) ApplyEvent(ctx context.Context, event Event) error {
 	return nil
 }

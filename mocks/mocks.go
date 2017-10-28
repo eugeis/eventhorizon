@@ -26,9 +26,6 @@ func init() {
 	eh.RegisterAggregate(func(id eh.UUID) eh.Aggregate {
 		return NewAggregate(id)
 	})
-	eh.RegisterAggregate(func(id eh.UUID) eh.Aggregate {
-		return NewAggregateOther(id)
-	})
 
 	eh.RegisterEventData(EventType, func() eh.EventData { return &EventData{} })
 }
@@ -36,8 +33,6 @@ func init() {
 const (
 	// AggregateType is the type for Aggregate.
 	AggregateType eh.AggregateType = "Aggregate"
-	// AggregateOtherType is the type for Aggregate.
-	AggregateOtherType eh.AggregateType = "AggregateOther"
 
 	// EventType is a the type for Event.
 	EventType eh.EventType = "Event"
@@ -58,9 +53,8 @@ type EmptyAggregate struct {
 
 // Aggregate is a mocked eventhorizon.Aggregate, useful in testing.
 type Aggregate struct {
-	*eh.AggregateBase
+	ID       eh.UUID
 	Commands []eh.Command
-	Events   []eh.Event
 	Context  context.Context
 	// Used to simulate errors in HandleCommand.
 	Err error
@@ -71,10 +65,21 @@ var _ = eh.Aggregate(&Aggregate{})
 // NewAggregate returns a new Aggregate.
 func NewAggregate(id eh.UUID) *Aggregate {
 	return &Aggregate{
-		AggregateBase: eh.NewAggregateBase(AggregateType, id),
-		Commands:      []eh.Command{},
-		Events:        []eh.Event{},
+		ID:       id,
+		Commands: []eh.Command{},
 	}
+}
+
+// EntityID implements the EntityID method of the eventhorizon.Entity and
+// eventhorizon.Aggregate interface.
+func (a *Aggregate) EntityID() eh.UUID {
+	return a.ID
+}
+
+// AggregateType implements the AggregateType method of the
+// eventhorizon.Aggregate interface.
+func (a *Aggregate) AggregateType() eh.AggregateType {
+	return AggregateType
 }
 
 // HandleCommand implements the HandleCommand method of the eventhorizon.Aggregate interface.
@@ -83,57 +88,6 @@ func (a *Aggregate) HandleCommand(ctx context.Context, cmd eh.Command) error {
 		return a.Err
 	}
 	a.Commands = append(a.Commands, cmd)
-	a.Context = ctx
-	return nil
-}
-
-// ApplyEvent implements the ApplyEvent method of the eventhorizon.Aggregate interface.
-func (a *Aggregate) ApplyEvent(ctx context.Context, event eh.Event) error {
-	if a.Err != nil {
-		return a.Err
-	}
-	a.Events = append(a.Events, event)
-	a.Context = ctx
-	return nil
-}
-
-// AggregateOther is a mocked eventhorizon.Aggregate, useful in testing.
-type AggregateOther struct {
-	*eh.AggregateBase
-	Commands []eh.Command
-	Events   []eh.Event
-	Context  context.Context
-	// Used to simulate errors in HandleCommand.
-	Err error
-}
-
-var _ = eh.Aggregate(&AggregateOther{})
-
-// NewAggregateOther returns a new Aggregate.
-func NewAggregateOther(id eh.UUID) *AggregateOther {
-	return &AggregateOther{
-		AggregateBase: eh.NewAggregateBase(AggregateOtherType, id),
-		Commands:      []eh.Command{},
-		Events:        []eh.Event{},
-	}
-}
-
-// HandleCommand implements the HandleCommand method of the eventhorizon.Aggregate interface.
-func (a *AggregateOther) HandleCommand(ctx context.Context, cmd eh.Command) error {
-	if a.Err != nil {
-		return a.Err
-	}
-	a.Commands = append(a.Commands, cmd)
-	a.Context = ctx
-	return nil
-}
-
-// ApplyEvent implements the ApplyEvent method of the eventhorizon.Aggregate interface.
-func (a *AggregateOther) ApplyEvent(ctx context.Context, event eh.Event) error {
-	if a.Err != nil {
-		return a.Err
-	}
-	a.Events = append(a.Events, event)
 	a.Context = ctx
 	return nil
 }
@@ -187,7 +141,13 @@ type Model struct {
 	CreatedAt time.Time `json:"created_at" bson:"created_at"`
 }
 
+var _ = eh.Entity(&Model{})
 var _ = eh.Versionable(&Model{})
+
+// EntityID implements the EntityID method of the eventhorizon.Entity interface.
+func (m *Model) EntityID() eh.UUID {
+	return m.ID
+}
 
 // AggregateVersion implements the AggregateVersion method of the eventhorizon.Versionable interface.
 func (m *Model) AggregateVersion() int {
@@ -198,6 +158,13 @@ func (m *Model) AggregateVersion() int {
 type SimpleModel struct {
 	ID      eh.UUID `json:"id"         bson:"_id"`
 	Content string  `json:"content"    bson:"content"`
+}
+
+var _ = eh.Entity(&SimpleModel{})
+
+// EntityID implements the EntityID method of the eventhorizon.Entity interface.
+func (m *SimpleModel) EntityID() eh.UUID {
+	return m.ID
 }
 
 // CommandHandler is a mocked eventhorizon.CommandHandler, useful in testing.
@@ -391,7 +358,7 @@ func (m *AggregateStore) Save(ctx context.Context, aggregate eh.Aggregate) error
 		return m.Err
 	}
 	m.Context = ctx
-	m.Aggregates[aggregate.AggregateID()] = aggregate
+	m.Aggregates[aggregate.EntityID()] = aggregate
 	return nil
 }
 
@@ -477,8 +444,8 @@ func (m *EventBus) SetHandlingStrategy(strategy eh.EventHandlingStrategy) {}
 // Repo is a mocked eventhorizon.ReadRepo, useful in testing.
 type Repo struct {
 	ParentRepo eh.ReadWriteRepo
-	Item       interface{}
-	Items      []interface{}
+	Entity     eh.Entity
+	Entities   []eh.Entity
 	// Used to simulate errors in the store.
 	LoadErr, SaveErr error
 }
@@ -491,27 +458,27 @@ func (r *Repo) Parent() eh.ReadRepo {
 }
 
 // Find implements the Find method of the eventhorizon.ReadRepo interface.
-func (r *Repo) Find(ctx context.Context, id eh.UUID) (interface{}, error) {
+func (r *Repo) Find(ctx context.Context, id eh.UUID) (eh.Entity, error) {
 	if r.LoadErr != nil {
 		return nil, r.LoadErr
 	}
-	return r.Item, nil
+	return r.Entity, nil
 }
 
 // FindAll implements the FindAll method of the eventhorizon.ReadRepo interface.
-func (r *Repo) FindAll(ctx context.Context) ([]interface{}, error) {
+func (r *Repo) FindAll(ctx context.Context) ([]eh.Entity, error) {
 	if r.LoadErr != nil {
 		return nil, r.LoadErr
 	}
-	return r.Items, nil
+	return r.Entities, nil
 }
 
 // Save implements the Save method of the eventhorizon.ReadRepo interface.
-func (r *Repo) Save(ctx context.Context, id eh.UUID, item interface{}) error {
+func (r *Repo) Save(ctx context.Context, entity eh.Entity) error {
 	if r.SaveErr != nil {
 		return r.SaveErr
 	}
-	r.Item = item
+	r.Entity = entity
 	return nil
 }
 
@@ -520,7 +487,7 @@ func (r *Repo) Remove(ctx context.Context, id eh.UUID) error {
 	if r.SaveErr != nil {
 		return r.SaveErr
 	}
-	r.Item = nil
+	r.Entity = nil
 	return nil
 }
 
