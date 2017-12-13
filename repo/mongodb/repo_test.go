@@ -47,7 +47,7 @@ func TestReadRepo(t *testing.T) {
 		t.Error("there should be a repository")
 	}
 	defer repo.Close()
-	repo.SetModel(func() interface{} {
+	repo.SetEntityFactory(func() eh.Entity {
 		return &mocks.Model{}
 	})
 	if repo.Parent() != nil {
@@ -84,7 +84,7 @@ func extraRepoTests(t *testing.T, ctx context.Context, repo *Repo) {
 		Content:   "modelCustom",
 		CreatedAt: time.Now().Round(time.Millisecond),
 	}
-	if err := repo.Save(ctx, modelCustom.ID, modelCustom); err != nil {
+	if err := repo.Save(ctx, modelCustom); err != nil {
 		t.Error("there should be no error:", err)
 	}
 
@@ -140,6 +140,29 @@ func extraRepoTests(t *testing.T, ctx context.Context, repo *Repo) {
 	if !reflect.DeepEqual(model, modelCustom2) {
 		t.Error("the item should be correct:", model)
 	}
+
+	// FindCustomIter by content.
+	iter, err := repo.FindCustomIter(ctx, func(c *mgo.Collection) *mgo.Query {
+		return c.Find(bson.M{"content": "modelCustom"})
+	})
+	if err != nil {
+		t.Error("there should be no error:", err)
+	}
+
+	if iter.Next() != true {
+		t.Error("the iterator should have results")
+	}
+	if !reflect.DeepEqual(iter.Value(), modelCustom) {
+		t.Error("the item should be correct:", modelCustom)
+	}
+	if iter.Next() == true {
+		t.Error("the iterator should have no results")
+	}
+	err = iter.Close()
+	if err != nil {
+		t.Error("there should be no error:", err)
+	}
+
 }
 
 func TestRepository(t *testing.T) {
