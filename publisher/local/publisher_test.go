@@ -1,4 +1,4 @@
-// Copyright (c) 2014 - Max Ekman <max@looplab.se>
+// Copyright (c) 2014 - The Event Horizon authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@ package local
 import (
 	"testing"
 
-	eh "github.com/looplab/eventhorizon"
 	"github.com/looplab/eventhorizon/publisher/testutil"
 )
 
@@ -26,16 +25,6 @@ func TestEventPublisher(t *testing.T) {
 	if publisher == nil {
 		t.Fatal("there should be a publisher")
 	}
-
-	testutil.EventPublisherCommonTests(t, publisher, publisher)
-}
-
-func TestEventPublisherAsync(t *testing.T) {
-	publisher := NewEventPublisher()
-	if publisher == nil {
-		t.Fatal("there should be a publisher")
-	}
-	publisher.SetHandlingStrategy(eh.AsyncEventHandlingStrategy)
 
 	testutil.EventPublisherCommonTests(t, publisher, publisher)
 }

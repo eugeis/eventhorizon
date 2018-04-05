@@ -1,4 +1,4 @@
-// Copyright (c) 2014 - Max Ekman <max@looplab.se>
+// Copyright (c) 2014 - The Event Horizon authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -189,7 +189,6 @@ func (h *CommandHandler) HandleCommand(ctx context.Context, cmd eh.Command) erro
 
 // EventHandler is a mocked eventhorizon.EventHandler, useful in testing.
 type EventHandler struct {
-	Type    eh.EventHandlerType
 	Events  []eh.Event
 	Context context.Context
 	Time    time.Time
@@ -201,18 +200,12 @@ type EventHandler struct {
 var _ = eh.EventHandler(&EventHandler{})
 
 // NewEventHandler creates a new EventHandler.
-func NewEventHandler(handlerType eh.EventHandlerType) *EventHandler {
+func NewEventHandler() *EventHandler {
 	return &EventHandler{
-		Type:    handlerType,
 		Events:  []eh.Event{},
 		Context: context.Background(),
 		Recv:    make(chan eh.Event, 10),
 	}
-}
-
-// HandlerType implements the HandlerType method of the eventhorizon.EventHandler interface.
-func (m *EventHandler) HandlerType() eh.EventHandlerType {
-	return m.Type
 }
 
 // HandleEvent implements the HandleEvent method of the eventhorizon.EventHandler interface.
@@ -225,6 +218,13 @@ func (m *EventHandler) HandleEvent(ctx context.Context, event eh.Event) error {
 	m.Time = time.Now()
 	m.Recv <- event
 	return nil
+}
+
+// Reset resets the mock data.
+func (m *EventHandler) Reset() {
+	m.Events = []eh.Event{}
+	m.Context = context.Background()
+	m.Time = time.Time{}
 }
 
 // WaitForEvent is a helper to wait until an event has been handled, it timeouts
@@ -260,8 +260,8 @@ func NewEventPublisher() *EventPublisher {
 	}
 }
 
-// PublishEvent implements the PublishEvent method of the eventhorizon.EventPublisher interface.
-func (m *EventPublisher) PublishEvent(ctx context.Context, event eh.Event) error {
+// HandleEvent implements the HandleEvent method of the eventhorizon.EventPublisher interface.
+func (m *EventPublisher) HandleEvent(ctx context.Context, event eh.Event) error {
 	if m.Err != nil {
 		return m.Err
 	}
@@ -275,10 +275,6 @@ func (m *EventPublisher) PublishEvent(ctx context.Context, event eh.Event) error
 func (m *EventPublisher) AddObserver(o eh.EventObserver) {
 	m.Observers = append(m.Observers, o)
 }
-
-// SetHandlingStrategy implements the SetHandlingStrategy method of the
-// eventhorizon.EventBus interface.
-func (m *EventPublisher) SetHandlingStrategy(strategy eh.EventHandlingStrategy) {}
 
 // WaitForEvent is a helper to wait until an event has been notified, it timeouts
 // after 1 second.
@@ -296,8 +292,6 @@ type EventObserver struct {
 	Events  []eh.Event
 	Context context.Context
 	Recv    chan eh.Event
-	// Used to simulate errors in HandleCommand.
-	Err error
 }
 
 var _ = eh.EventObserver(&EventObserver{})
@@ -312,14 +306,10 @@ func NewEventObserver() *EventObserver {
 }
 
 // Notify implements the Notify method of the eventhorizon.EventHandler interface.
-func (m *EventObserver) Notify(ctx context.Context, event eh.Event) error {
-	if m.Err != nil {
-		return m.Err
-	}
+func (m *EventObserver) Notify(ctx context.Context, event eh.Event) {
 	m.Events = append(m.Events, event)
 	m.Context = ctx
 	m.Recv <- event
-	return nil
 }
 
 // WaitForEvent is a helper to wait until an event has been notified, it timeouts
@@ -405,6 +395,8 @@ func (m *EventStore) Replace(ctx context.Context, event eh.Event) error {
 	return nil
 }
 
+var _ = eh.EventBus(&EventBus{})
+
 // EventBus is a mocked eventhorizon.EventBus, useful in testing.
 type EventBus struct {
 	Events  []eh.Event
@@ -413,33 +405,18 @@ type EventBus struct {
 	Err error
 }
 
-var _ = eh.EventBus(&EventBus{})
-
-// HandlerType implements the HandlerType method of the eventhorizon.EventBus interface.
-func (m *EventBus) HandlerType() eh.EventHandlerType {
-	return eh.EventHandlerType("MockEventBus")
-}
-
-// HandleEvent implements the HandleEvent method of the eventhorizon.EventBus interface.
-func (m *EventBus) HandleEvent(ctx context.Context, event eh.Event) error {
-	if m.Err != nil {
-		return m.Err
+// PublishEvent implements the PublishEvent method of the eventhorizon.EventBus interface.
+func (b *EventBus) PublishEvent(ctx context.Context, event eh.Event) error {
+	if b.Err != nil {
+		return b.Err
 	}
-	m.Events = append(m.Events, event)
-	m.Context = ctx
+	b.Events = append(b.Events, event)
+	b.Context = ctx
 	return nil
 }
 
 // AddHandler implements the AddHandler method of the eventhorizon.EventBus interface.
-func (m *EventBus) AddHandler(handler eh.EventHandler, event eh.EventType) {}
-
-// SetPublisher implements the SetPublisher method of the
-// eventhorizon.EventBus interface.
-func (m *EventBus) SetPublisher(publisher eh.EventPublisher) {}
-
-// SetHandlingStrategy implements the SetHandlingStrategy method of the
-// eventhorizon.EventBus interface.
-func (m *EventBus) SetHandlingStrategy(strategy eh.EventHandlingStrategy) {}
+func (b *EventBus) AddHandler(m eh.EventMatcher, h eh.EventHandler) {}
 
 // Repo is a mocked eventhorizon.ReadRepo, useful in testing.
 type Repo struct {
@@ -448,6 +425,8 @@ type Repo struct {
 	Entities   []eh.Entity
 	// Used to simulate errors in the store.
 	LoadErr, SaveErr error
+
+	FindCalled, FindAllCalled, SaveCalled, RemoveCalled bool
 }
 
 var _ = eh.ReadWriteRepo(&Repo{})
@@ -459,6 +438,7 @@ func (r *Repo) Parent() eh.ReadRepo {
 
 // Find implements the Find method of the eventhorizon.ReadRepo interface.
 func (r *Repo) Find(ctx context.Context, id eh.UUID) (eh.Entity, error) {
+	r.FindCalled = true
 	if r.LoadErr != nil {
 		return nil, r.LoadErr
 	}
@@ -467,6 +447,7 @@ func (r *Repo) Find(ctx context.Context, id eh.UUID) (eh.Entity, error) {
 
 // FindAll implements the FindAll method of the eventhorizon.ReadRepo interface.
 func (r *Repo) FindAll(ctx context.Context) ([]eh.Entity, error) {
+	r.FindAllCalled = true
 	if r.LoadErr != nil {
 		return nil, r.LoadErr
 	}
@@ -475,6 +456,7 @@ func (r *Repo) FindAll(ctx context.Context) ([]eh.Entity, error) {
 
 // Save implements the Save method of the eventhorizon.ReadRepo interface.
 func (r *Repo) Save(ctx context.Context, entity eh.Entity) error {
+	r.SaveCalled = true
 	if r.SaveErr != nil {
 		return r.SaveErr
 	}
@@ -484,6 +466,7 @@ func (r *Repo) Save(ctx context.Context, entity eh.Entity) error {
 
 // Remove implements the Remove method of the eventhorizon.ReadRepo interface.
 func (r *Repo) Remove(ctx context.Context, id eh.UUID) error {
+	r.RemoveCalled = true
 	if r.SaveErr != nil {
 		return r.SaveErr
 	}
@@ -496,6 +479,17 @@ type contextKey int
 const (
 	contextKeyOne contextKey = iota
 )
+
+// WithContextOne sets a value for One one the context.
+func WithContextOne(ctx context.Context, val string) context.Context {
+	return context.WithValue(ctx, contextKeyOne, val)
+}
+
+// ContextOne returns a value for One from the context.
+func ContextOne(ctx context.Context) (string, bool) {
+	val, ok := ctx.Value(contextKeyOne).(string)
+	return val, ok
+}
 
 const (
 	// The string key used to marshal contextKeyOne.
@@ -515,15 +509,4 @@ func init() {
 		}
 		return ctx
 	})
-}
-
-// WithContextOne sets a value for One one the context.
-func WithContextOne(ctx context.Context, val string) context.Context {
-	return context.WithValue(ctx, contextKeyOne, val)
-}
-
-// ContextOne returns a value for One from the context.
-func ContextOne(ctx context.Context) (string, bool) {
-	val, ok := ctx.Value(contextKeyOne).(string)
-	return val, ok
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2017 - Max Ekman <max@looplab.se>
+// Copyright (c) 2017 - The Event Horizon authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,10 +16,45 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	eh "github.com/looplab/eventhorizon"
 )
+
+// NewMiddleware returns a new async handling middleware that returns any errors
+// on a error channel.
+func NewMiddleware() (eh.CommandHandlerMiddleware, chan Error) {
+	errCh := make(chan Error, 20)
+	return eh.CommandHandlerMiddleware(func(h eh.CommandHandler) eh.CommandHandler {
+		return eh.CommandHandlerFunc(func(ctx context.Context, cmd eh.Command) error {
+			// Delayed command execution if there is time set.
+			if c, ok := cmd.(Command); ok && !c.ExecuteAt().IsZero() {
+				go func() {
+					t := time.NewTimer(c.ExecuteAt().Sub(time.Now()))
+					defer t.Stop()
+
+					var err error
+					select {
+					case <-ctx.Done():
+						err = ctx.Err()
+					case <-t.C:
+						err = h.HandleCommand(ctx, cmd)
+					}
+
+					if err != nil {
+						// Always try to deliver errors.
+						errCh <- Error{err, ctx, cmd}
+					}
+				}()
+				return nil
+			}
+
+			// Immediate command execution.
+			return h.HandleCommand(ctx, cmd)
+		})
+	}), errCh
+}
 
 // Command is a scheduled command with an execution time.
 type Command interface {
@@ -45,52 +80,14 @@ func (c *command) ExecuteAt() time.Time {
 	return c.t
 }
 
-// CommandHandler handles commands either directly or with a delay on a schedule.
-type CommandHandler struct {
-	eh.CommandHandler
-	errCh chan error
+// Error is an async error containing the error and the command.
+type Error struct {
+	Err     error
+	Ctx     context.Context
+	Command eh.Command
 }
 
-// NewCommandHandler creates a CommandHandler.
-func NewCommandHandler(handler eh.CommandHandler) *CommandHandler {
-	return &CommandHandler{
-		CommandHandler: handler,
-		errCh:          make(chan error, 1),
-	}
-}
-
-// Error returns the error channel.
-func (b *CommandHandler) Error() <-chan error {
-	return b.errCh
-}
-
-// HandleCommand implements the HandleCommand method of the
-// eventhorizon.CommandHandler interface.
-func (b *CommandHandler) HandleCommand(ctx context.Context, cmd eh.Command) error {
-	// Delayed command execution if there is time set.
-	if c, ok := cmd.(Command); ok && !c.ExecuteAt().IsZero() {
-		go func() {
-			t := time.NewTimer(c.ExecuteAt().Sub(time.Now()))
-			defer t.Stop()
-
-			var err error
-			select {
-			case <-ctx.Done():
-				err = ctx.Err()
-			case <-t.C:
-				err = b.CommandHandler.HandleCommand(ctx, cmd)
-			}
-
-			if err != nil {
-				select {
-				case b.errCh <- err:
-				default:
-				}
-			}
-		}()
-		return nil
-	}
-
-	// Immediate command execution.
-	return b.CommandHandler.HandleCommand(ctx, cmd)
+// Error implements the Error method of the error interface.
+func (e Error) Error() string {
+	return fmt.Sprintf("%s (%s): %s", e.Command.CommandType(), e.Command.AggregateID(), e.Err.Error())
 }

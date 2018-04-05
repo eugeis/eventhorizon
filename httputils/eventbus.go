@@ -1,4 +1,4 @@
-// Copyright (c) 2017 - Max Ekman <max@looplab.se>
+// Copyright (c) 2017 - The Event Horizon authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,13 +31,12 @@ type Observer struct {
 }
 
 // Notify implements the Notify method of the EventObserver interface.
-func (o *Observer) Notify(ctx context.Context, event eh.Event) error {
+func (o *Observer) Notify(ctx context.Context, event eh.Event) {
 	select {
 	case o.EventCh <- event:
 	default:
 		log.Println("missed event:", event)
 	}
-	return nil
 }
 
 // EventBusHandler is a Websocket handler for eventhorizon.Events. Events will

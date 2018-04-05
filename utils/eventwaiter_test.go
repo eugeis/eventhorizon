@@ -1,4 +1,4 @@
-// Copyright (c) 2017 - Max Ekman <max@looplab.se>
+// Copyright (c) 2017 - The Event Horizon authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -35,9 +35,7 @@ func TestEventWaiter(t *testing.T) {
 	)
 	go func() {
 		time.Sleep(time.Millisecond)
-		if err := w.Notify(context.Background(), expectedEvent); err != nil {
-			t.Error(err)
-		}
+		w.Notify(context.Background(), expectedEvent)
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -66,9 +64,7 @@ func TestEventWaiter(t *testing.T) {
 		mocks.AggregateType, eh.NewUUID(), 1)
 	go func() {
 		time.Sleep(time.Millisecond)
-		if err := w.Notify(context.Background(), otherEvent); err != nil {
-			t.Error(err)
-		}
+		w.Notify(context.Background(), otherEvent)
 	}()
 
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Millisecond)

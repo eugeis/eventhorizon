@@ -1,4 +1,4 @@
-// Copyright (c) 2017 - Max Ekman <max@looplab.se>
+// Copyright (c) 2017 - The Event Horizon authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -66,14 +66,8 @@ func (w *EventWaiter) run() {
 
 // Notify implements the eventhorizon.EventObserver.Notify method which forwards
 // events to the waiters so that they can match the events.
-func (w *EventWaiter) Notify(ctx context.Context, event eh.Event) error {
-	select {
-	case w.inbox <- event:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	return nil
+func (w *EventWaiter) Notify(ctx context.Context, event eh.Event) {
+	w.inbox <- event
 }
 
 // Listen waits unil the match function returns true for an event, or the context
@@ -100,6 +94,7 @@ type EventListener struct {
 	unregister chan *EventListener
 }
 
+// Wait waits for the event to arrive.
 func (l *EventListener) Wait(ctx context.Context) (eh.Event, error) {
 	select {
 	case event := <-l.inbox:
@@ -109,6 +104,12 @@ func (l *EventListener) Wait(ctx context.Context) (eh.Event, error) {
 	}
 }
 
+// Inbox returns the channel that events will be delivered on so that you can integrate into your own select() if needed.
+func (l *EventListener) Inbox() <-chan eh.Event {
+	return l.inbox
+}
+
+// Close stops listening for more events.
 func (l *EventListener) Close() {
 	l.unregister <- l
 }

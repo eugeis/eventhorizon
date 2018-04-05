@@ -1,4 +1,4 @@
-// Copyright (c) 2017 - Max Ekman <max@looplab.se>
+// Copyright (c) 2017 - The Event Horizon authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	eh "github.com/looplab/eventhorizon"
 	"github.com/looplab/eventhorizon/mocks"
@@ -26,8 +27,11 @@ import (
 
 func TestNewAggregateStore(t *testing.T) {
 	repo := &mocks.Repo{}
+	bus := &mocks.EventBus{
+		Events: make([]eh.Event, 0),
+	}
 
-	store, err := NewAggregateStore(nil)
+	store, err := NewAggregateStore(nil, nil)
 	if err != ErrInvalidRepo {
 		t.Error("there should be a ErrInvalidRepo error:", err)
 	}
@@ -35,7 +39,7 @@ func TestNewAggregateStore(t *testing.T) {
 		t.Error("there should be no store:", store)
 	}
 
-	store, err = NewAggregateStore(repo)
+	store, err = NewAggregateStore(repo, bus)
 	if err != nil {
 		t.Error("there should be no error:", err)
 	}
@@ -45,12 +49,12 @@ func TestNewAggregateStore(t *testing.T) {
 }
 
 func TestAggregateStore_LoadNotFound(t *testing.T) {
-	store, repo := createStore(t)
+	store, repo, _ := createStore(t)
 
 	ctx := context.Background()
 
 	id := eh.NewUUID()
-	repo.LoadErr = eh.ErrEntityNotFound
+	repo.LoadErr = eh.RepoError{Err: eh.ErrEntityNotFound}
 	agg, err := store.Load(ctx, AggregateType, id)
 	if err != nil {
 		t.Fatal("there should be no error:", err)
@@ -61,7 +65,7 @@ func TestAggregateStore_LoadNotFound(t *testing.T) {
 }
 
 func TestAggregateStore_Load(t *testing.T) {
-	store, repo := createStore(t)
+	store, repo, _ := createStore(t)
 
 	ctx := context.Background()
 
@@ -86,7 +90,7 @@ func TestAggregateStore_Load(t *testing.T) {
 }
 
 func TestAggregateStore_Load_InvalidAggregate(t *testing.T) {
-	store, repo := createStore(t)
+	store, repo, _ := createStore(t)
 
 	ctx := context.Background()
 
@@ -108,15 +112,18 @@ func TestAggregateStore_Load_InvalidAggregate(t *testing.T) {
 }
 
 func TestAggregateStore_Save(t *testing.T) {
-	store, repo := createStore(t)
+	store, repo, _ := createStore(t)
 
 	ctx := context.Background()
 
 	id := eh.NewUUID()
-	agg := NewAggregateOther(id)
+	agg := NewAggregate(id)
 	err := store.Save(ctx, agg)
 	if err != nil {
 		t.Error("there should be no error:", err)
+	}
+	if repo.Entity != agg {
+		t.Error("the aggregate should be saved")
 	}
 
 	// Store error.
@@ -128,16 +135,58 @@ func TestAggregateStore_Save(t *testing.T) {
 	repo.SaveErr = nil
 }
 
-func createStore(t *testing.T) (*AggregateStore, *mocks.Repo) {
+func TestAggregateStore_SaveWithPublish(t *testing.T) {
+	store, repo, bus := createStore(t)
+
+	ctx := context.Background()
+	id := eh.NewUUID()
+	agg := NewAggregate(id)
+	event := eh.NewEvent("test", nil, time.Now())
+
+	// Normal publish should publish events on the bus.
+	agg.PublishEvent(event)
+	if len(agg.SliceEventPublisher) != 1 {
+		t.Error("there should be one event to publish")
+	}
+	err := store.Save(ctx, agg)
+	if err != nil {
+		t.Error("there should be no error:", err)
+	}
+	if repo.Entity != agg {
+		t.Error("the aggregate should be saved")
+	}
+	if !reflect.DeepEqual(bus.Events, []eh.Event{event}) {
+		t.Error("there should be an event on the bus:", bus.Events)
+	}
+	if len(agg.SliceEventPublisher) != 0 {
+		t.Error("there should be no events to publish")
+	}
+
+	// Simulate a bus error.
+	bus.Err = errors.New("bus error")
+	agg.PublishEvent(event)
+	err = store.Save(ctx, agg)
+	if err == nil || err.Error() != "bus error" {
+		t.Error("there should be an error named 'error':", err)
+	}
+	if len(agg.SliceEventPublisher) != 0 {
+		t.Error("there should be no events to publish")
+	}
+}
+
+func createStore(t *testing.T) (*AggregateStore, *mocks.Repo, *mocks.EventBus) {
 	repo := &mocks.Repo{}
-	store, err := NewAggregateStore(repo)
+	bus := &mocks.EventBus{
+		Events: make([]eh.Event, 0),
+	}
+	store, err := NewAggregateStore(repo, bus)
 	if err != nil {
 		t.Fatal("there should be no error:", err)
 	}
 	if store == nil {
 		t.Fatal("there should be a store")
 	}
-	return store, repo
+	return store, repo, bus
 }
 
 const (
@@ -149,6 +198,8 @@ const (
 
 // Aggregate is a mocked eventhorizon.Aggregate, useful in testing.
 type Aggregate struct {
+	SliceEventPublisher
+
 	ID       eh.UUID
 	Commands []eh.Command
 	Context  context.Context
@@ -195,38 +246,6 @@ type AggregateOther struct {
 	Context  context.Context
 	// Used to simulate errors in HandleCommand.
 	Err error
-}
-
-var _ = eh.Aggregate(&AggregateOther{})
-
-// NewAggregate returns a new AggregateOther.
-func NewAggregateOther(id eh.UUID) *AggregateOther {
-	return &AggregateOther{
-		ID:       id,
-		Commands: []eh.Command{},
-	}
-}
-
-// EntityID implements the EntityID method of the eventhorizon.Entity and
-// eventhorizon.Aggregate interface.
-func (a *AggregateOther) EntityID() eh.UUID {
-	return a.ID
-}
-
-// AggregateType implements the AggregateType method of the
-// eventhorizon.Aggregate interface.
-func (a *AggregateOther) AggregateType() eh.AggregateType {
-	return AggregateType
-}
-
-// HandleCommand implements the HandleCommand method of the eventhorizon.Aggregate interface.
-func (a *AggregateOther) HandleCommand(ctx context.Context, cmd eh.Command) error {
-	if a.Err != nil {
-		return a.Err
-	}
-	a.Commands = append(a.Commands, cmd)
-	a.Context = ctx
-	return nil
 }
 
 // Model is a mocked read model.
