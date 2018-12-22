@@ -33,13 +33,12 @@ import (
 )
 
 func Example() {
-	// Support Wercker testing with MongoDB.
-	host := os.Getenv("MONGO_PORT_27017_TCP_ADDR")
-	port := os.Getenv("MONGO_PORT_27017_TCP_PORT")
+	// Local Mongo testing with Docker
+	url := os.Getenv("MONGO_HOST")
 
-	url := "localhost"
-	if host != "" && port != "" {
-		url = host + ":" + port
+	if url == "" {
+		// Default to localhost
+		url = "localhost:27017"
 	}
 
 	// Create the event store.
@@ -49,7 +48,12 @@ func Example() {
 	}
 
 	// Create the event bus that distributes events.
-	eventBus := eventbus.NewEventBus()
+	eventBus := eventbus.NewEventBus(nil)
+	go func() {
+		for e := range eventBus.Errors() {
+			log.Printf("eventbus: %s", e.Error())
+		}
+	}()
 
 	// Create the command bus.
 	commandBus := bus.NewCommandHandler()

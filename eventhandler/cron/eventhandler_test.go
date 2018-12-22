@@ -15,18 +15,17 @@
 package cron
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	"time"
-
-	"golang.org/x/net/context"
 
 	eh "github.com/looplab/eventhorizon"
 	"github.com/looplab/eventhorizon/mocks"
 )
 
 func TestCommandHandler(t *testing.T) {
-	h := mocks.NewEventHandler()
+	h := mocks.NewEventHandler("test")
 	cron := NewEventHandler(h)
 
 	timestamp := time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC)

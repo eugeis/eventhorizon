@@ -16,14 +16,39 @@ package eventhorizon
 
 import (
 	"context"
+	"fmt"
 )
 
-// EventBus is an event handler that handles events with the correct subhandlers
-// after which it publishes the event using the publisher.
+// EventBusError is an async error containing the error returned from a handler
+// or observer and the event that it happened on.
+type EventBusError struct {
+	Err   error
+	Ctx   context.Context
+	Event Event
+}
+
+// Error implements the Error method of the error interface.
+func (e EventBusError) Error() string {
+	return fmt.Sprintf("%s: (%s)", e.Err, e.Event)
+}
+
+// EventBus sends published events to one of each handler type and all observers.
+// That means that if the same handler is registered on multiple nodes only one
+// of them will receive the event. In contrast all observers registered on multiple
+// nodes will receive the event. Events are not garantued to be handeled or observed
+// in order.
 type EventBus interface {
+	// PublishEvent publishes the event on the bus.
 	PublishEvent(context.Context, Event) error
 
 	// AddHandler adds a handler for an event. Panics if either the matcher
-	// or handler is nil.
+	// or handler is nil or the handler is already added.
 	AddHandler(EventMatcher, EventHandler)
+
+	// AddObserver adds an observer. Panics if the observer is nil or the observer
+	// is already added.
+	AddObserver(EventMatcher, EventHandler)
+
+	// Errors returns an error channel where async handling errors are sent.
+	Errors() <-chan EventBusError
 }

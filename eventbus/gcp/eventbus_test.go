@@ -12,41 +12,41 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package redis
+package gcp
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"testing"
+	"time"
 
-	"github.com/looplab/eventhorizon/publisher/testutil"
+	"github.com/looplab/eventhorizon/eventbus"
 )
 
-func TestEventPublisher(t *testing.T) {
-	// Support Wercker testing with MongoDB.
-	host := os.Getenv("REDIS_PORT_6379_TCP_ADDR")
-	port := os.Getenv("REDIS_PORT_6379_TCP_PORT")
-
-	url := ":6379"
-	if host != "" && port != "" {
-		url = host + ":" + port
+func TestEventBus(t *testing.T) {
+	// Connect to localhost if not running inside docker
+	if os.Getenv("PUBSUB_EMULATOR_HOST") == "" {
+		os.Setenv("PUBSUB_EMULATOR_HOST", "localhost:8793")
 	}
 
-	publisher1, err := NewEventPublisher("test", url, "")
+	// Get a random app ID.
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatal(err)
+	}
+	appID := "app-" + hex.EncodeToString(b)
+
+	bus1, err := NewEventBus("project_id", appID)
 	if err != nil {
 		t.Fatal("there should be no error:", err)
 	}
-	defer publisher1.Close()
 
-	// Another bus to test the observer.
-	publisher2, err := NewEventPublisher("test", url, "")
+	bus2, err := NewEventBus("project_id", appID)
 	if err != nil {
 		t.Fatal("there should be no error:", err)
 	}
-	defer publisher2.Close()
 
-	// Wait for subscriptions to be ready.
-	<-publisher1.ready
-	<-publisher2.ready
+	eventbus.AcceptanceTest(t, bus1, bus2, time.Second)
 
-	testutil.EventPublisherCommonTests(t, publisher1, publisher2)
 }
