@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	eh "github.com/looplab/eventhorizon"
 )
 
@@ -30,14 +31,22 @@ var ErrCouldNotSaveAggregate = errors.New("could not save aggregate")
 // EventStore implements EventStore as an in memory structure.
 type EventStore struct {
 	// The outer map is with namespace as key, the inner with aggregate ID.
+<<<<<<< HEAD
 	db   map[string]map[string]aggregateRecord
+=======
+	db   map[string]map[uuid.UUID]aggregateRecord
+>>>>>>> upstream/master
 	dbMu sync.RWMutex
 }
 
 // NewEventStore creates a new EventStore using memory as storage.
 func NewEventStore() *EventStore {
 	s := &EventStore{
+<<<<<<< HEAD
 		db: map[string]map[string]aggregateRecord{},
+=======
+		db: map[string]map[uuid.UUID]aggregateRecord{},
+>>>>>>> upstream/master
 	}
 	return s
 }
@@ -117,7 +126,11 @@ func (s *EventStore) Save(ctx context.Context, events []eh.Event, originalVersio
 }
 
 // Load implements the Load method of the eventhorizon.EventStore interface.
+<<<<<<< HEAD
 func (s *EventStore) Load(ctx context.Context, aggregateType eh.AggregateType, id eh.UUID) ([]eh.Event, error) {
+=======
+func (s *EventStore) Load(ctx context.Context, id uuid.UUID) ([]eh.Event, error) {
+>>>>>>> upstream/master
 	s.dbMu.RLock()
 	defer s.dbMu.RUnlock()
 
@@ -180,7 +193,11 @@ func (s *EventStore) RenameEvent(ctx context.Context, from, to eh.EventType) err
 	s.dbMu.Lock()
 	defer s.dbMu.Unlock()
 
+<<<<<<< HEAD
 	updated := map[string]aggregateRecord{}
+=======
+	updated := map[uuid.UUID]aggregateRecord{}
+>>>>>>> upstream/master
 	for id, aggregate := range s.db[ns] {
 		events := make([]dbEvent, len(aggregate.Events))
 		for i, e := range aggregate.Events {
@@ -207,13 +224,17 @@ func (s *EventStore) namespace(ctx context.Context) string {
 	defer s.dbMu.Unlock()
 	ns := eh.NamespaceFromContext(ctx)
 	if _, ok := s.db[ns]; !ok {
+<<<<<<< HEAD
 		s.db[ns] = map[string]aggregateRecord{}
+=======
+		s.db[ns] = map[uuid.UUID]aggregateRecord{}
+>>>>>>> upstream/master
 	}
 	return ns
 }
 
 type aggregateRecord struct {
-	AggregateID eh.UUID
+	AggregateID uuid.UUID
 	Version     int
 	Events      []dbEvent
 	// Snapshot    eh.Aggregate
@@ -225,7 +246,7 @@ type dbEvent struct {
 	Data          eh.EventData
 	Timestamp     time.Time
 	AggregateType eh.AggregateType
-	AggregateID   eh.UUID
+	AggregateID   uuid.UUID
 	Version       int
 }
 
@@ -268,7 +289,7 @@ func (e event) AggregateType() eh.AggregateType {
 }
 
 // AggrgateID implements the AggrgateID method of the eventhorizon.Event interface.
-func (e event) AggregateID() eh.UUID {
+func (e event) AggregateID() uuid.UUID {
 	return e.dbEvent.AggregateID
 }
 
